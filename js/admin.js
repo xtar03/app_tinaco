@@ -14,6 +14,7 @@ async function getDevices() {
     const response = await fetch(`${API_URL}/dispositivos`);
     const allItems = await response.json();
     
+    // LA LÍNEA CLAVE: Este filtro asegura que solo los items que NO son de tipo 'log' se muestren.
     const devices = allItems.filter(item => item.tipo && item.tipo.toLowerCase() !== 'log');
     
     tableBody.innerHTML = '';
@@ -62,6 +63,15 @@ async function saveDevice(e) {
  * @param {string} id - El ID del dispositivo a eliminar.
  */
 async function deleteDevice(id) {
+    // Primero, verificamos que no estemos intentando borrar un log por error
+    const response = await fetch(`${API_URL}/dispositivos/${id}`);
+    const itemToDelete = await response.json();
+
+    if (itemToDelete.tipo && itemToDelete.tipo.toLowerCase() === 'log') {
+        alert('No se pueden eliminar registros de historial desde esta página.');
+        return;
+    }
+
     if (confirm('¿Estás seguro de que quieres eliminar este dispositivo?')) {
         await fetch(`${API_URL}/dispositivos/${id}`, { method: 'DELETE' });
         getDevices();

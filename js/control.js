@@ -1,26 +1,14 @@
-// ==================================================================
-// Lógica para la página de Control (control.html)
-// ==================================================================
-
 const API_URL = 'https://68bb0dec84055bce63f1058f.mockapi.io/api/v1/';
+
 const controlContainer = document.getElementById('control-container');
 const alertContainer = document.getElementById('alert-container');
 
-/**
- * Obtiene solo los dispositivos (actuadores y sensores) de la API.
- * @returns {Promise<Array>} Una promesa que se resuelve con un arreglo de dispositivos.
- */
 async function fetchDevices() {
     const response = await fetch(`${API_URL}/dispositivos`);
     const allItems = await response.json();
     return allItems.filter(item => item.tipo && item.tipo.toLowerCase() !== 'log');
 }
 
-/**
- * Actualiza un dispositivo en la API enviando una petición PUT.
- * @param {string} id - El ID del dispositivo a actualizar.
- * @param {object} data - El objeto con los datos a actualizar.
- */
 async function updateDevice(id, data) {
     await fetch(`${API_URL}/dispositivos/${id}`, {
         method: 'PUT',
@@ -29,10 +17,6 @@ async function updateDevice(id, data) {
     });
 }
 
-/**
- * Crea un registro de historial (un item con tipo 'log') en la API.
- * @param {object} logData - El objeto con la información del evento a registrar.
- */
 async function createHistoryLog(logData) {
     const logObject = {
         nombre: logData.nombreDispositivo,
@@ -49,20 +33,43 @@ async function createHistoryLog(logData) {
     });
 }
 
+// ==================================================================
+// NUEVA FUNCIÓN AUXILIAR PARA REGISTRAR LOS CAMBIOS DE NIVEL
+// ==================================================================
 /**
- * Muestra una alerta de Bootstrap en la pantalla.
- * @param {string} message - El mensaje a mostrar.
- * @param {string} type - El tipo de alerta (ej. 'success', 'warning', 'danger').
+ * Compara el valor antiguo y nuevo de un sensor y registra si se cruzó un umbral del 10%.
+ * @param {object} device - El objeto del dispositivo sensor.
+ * @param {number} oldValue - El valor de nivel antes del cambio.
+ * @param {number} newValue - El valor de nivel después del cambio.
  */
+function checkAndLogThresholds(device, oldValue, newValue) {
+    const thresholds = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    thresholds.forEach(th => {
+        // Revisa si se cruzó un umbral hacia arriba (llenándose)
+        if (oldValue < th && newValue >= th) {
+            createHistoryLog({
+                nombreDispositivo: device.nombre,
+                evento: 'Nivel ha llegado al',
+                valor: `${th}% de capacidad`
+            });
+        }
+        // Revisa si se cruzó un umbral hacia abajo (vaciándose)
+        if (oldValue > th && newValue <= th) {
+            createHistoryLog({
+                nombreDispositivo: device.nombre,
+                evento: 'Nivel ha disminuido al',
+                valor: `${th}% de capacidad`
+            });
+        }
+    });
+}
+
+
 function showAlert(message, type = 'info') {
     const alertHtml = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
     alertContainer.innerHTML = alertHtml;
 }
 
-/**
- * Dibuja los controles (interruptores, barras de progreso) en la página.
- * @param {Array} devices - El arreglo de dispositivos a dibujar.
- */
 function renderControls(devices) {
     controlContainer.innerHTML = '';
     devices.forEach(device => {
@@ -78,10 +85,6 @@ function renderControls(devices) {
     addEventListeners(devices);
 }
 
-/**
- * Añade los listeners de eventos a los controles recién dibujados.
- * @param {Array} devices - El arreglo de dispositivos.
- */
 function addEventListeners(devices) {
     const pumpSwitches = document.querySelectorAll('input[id^="switch-"]');
     pumpSwitches.forEach(pumpSwitch => {
@@ -102,21 +105,19 @@ function addEventListeners(devices) {
         consumeButton.addEventListener('click', async () => {
             const deviceId = consumeButton.dataset.deviceId;
             const device = devices.find(d => d.id === deviceId);
-            let currentValue = parseInt(consumeButton.dataset.currentValue);
-            let newValue = Math.max(0, currentValue - 5);
+            const oldValue = parseInt(consumeButton.dataset.currentValue);
+            const newValue = Math.max(0, oldValue - 10); // Aumentado a 10% para cruzar umbrales
             
             await updateDevice(deviceId, { valor: newValue, ultimaactividad: Math.floor(Date.now() / 1000), ultimevento: "Consumo de agua simulado" });
-            await createHistoryLog({ nombreDispositivo: device.nombre, evento: 'Consumo simulado', valor: `${newValue}%` });
+            
+            // AÑADIDO: Se llama a la función para registrar el cambio de umbral
+            checkAndLogThresholds(device, oldValue, newValue);
+            
             await mainCycle();
         });
     }
 }
 
-/**
- * Función auxiliar para encontrar los 4 dispositivos clave de forma segura.
- * @param {Array} devices - El arreglo completo de dispositivos.
- * @returns {object} Un objeto con los 4 dispositivos clave.
- */
 function findDevices(devices) {
     const mainPump = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'actuador' && d.nombre.toLowerCase().includes("bombadeagua") && !d.nombre.toLowerCase().includes("respaldo"));
     const backupPump = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'actuador' && d.nombre.toLowerCase().includes("respaldo"));
@@ -125,10 +126,6 @@ function findDevices(devices) {
     return { mainPump, backupPump, mainSensor, backupSensor };
 }
 
-/**
- * Revisa el estado de los dispositivos y muestra alertas si se cumplen ciertas condiciones.
- * @param {Array} devices - El arreglo de dispositivos.
- */
 function checkSystemAlerts(devices) {
     const { mainPump, mainSensor, backupSensor } = findDevices(devices);
     if (!mainPump || !mainSensor || !backupSensor) return;
@@ -144,32 +141,40 @@ function checkSystemAlerts(devices) {
     if (backupSensor.valor >= 95) showAlert('<strong>Información:</strong> El tinaco de respaldo está lleno.', 'success');
 }
 
-/**
- * Ejecuta la lógica de simulación de llenado y transferencia de agua.
- * @param {Array} devices - El arreglo de dispositivos.
- */
 async function runSimulation(devices) {
     const { mainPump, backupPump, mainSensor, backupSensor } = findDevices(devices);
     if (!mainPump || !backupPump || !mainSensor || !backupSensor) return;
 
     const nowSeconds = Math.floor(Date.now() / 1000);
+
+    // Lógica para la bomba principal
     if (mainPump.estado && mainSensor.valor < 100 && backupSensor.valor > 0) {
-        const newMainValue = Math.min(100, mainSensor.valor + 5);
-        const newBackupValue = Math.max(0, backupSensor.valor - 10);
+        const oldMainValue = mainSensor.valor;
+        const oldBackupValue = backupSensor.valor;
+        const newMainValue = Math.min(100, oldMainValue + 5);
+        const newBackupValue = Math.max(0, oldBackupValue - 10);
+
         await Promise.all([
             updateDevice(mainSensor.id, { valor: newMainValue, ultimaactividad: nowSeconds, ultimevento: "Recibiendo agua..." }),
             updateDevice(backupSensor.id, { valor: newBackupValue, ultimaactividad: nowSeconds, ultimevento: "Transfiriendo agua..." })
         ]);
+
+        // AÑADIDO: Se registran los cambios de umbral para ambos tinacos
+        checkAndLogThresholds(mainSensor, oldMainValue, newMainValue);
+        checkAndLogThresholds(backupSensor, oldBackupValue, newBackupValue);
     }
+
+    // Lógica para la bomba de respaldo
     if (backupPump.estado && backupSensor.valor < 100) {
-        const newBackupValue = Math.min(100, backupSensor.valor + 10);
+        const oldBackupValue = backupSensor.valor;
+        const newBackupValue = Math.min(100, oldBackupValue + 10);
         await updateDevice(backupSensor.id, { valor: newBackupValue, ultimaactividad: nowSeconds, ultimevento: "Llenando..." });
+        
+        // AÑADIDO: Se registran los cambios de umbral para el tinaco de respaldo
+        checkAndLogThresholds(backupSensor, oldBackupValue, newBackupValue);
     }
 }
 
-/**
- * El ciclo principal de la aplicación de control.
- */
 async function mainCycle() {
     try {
         let devices = await fetchDevices();
