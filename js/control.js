@@ -1,13 +1,26 @@
-const API_URL = 'https://68bb0dec84055bce63f1058f.mockapi.io/api/v1/';
+// ==================================================================
+// Lógica para la página de Control (control.html)
+// ==================================================================
 
+const API_URL = 'https://68bb0dec84055bce63f1058f.mockapi.io/api/v1/';
 const controlContainer = document.getElementById('control-container');
 const alertContainer = document.getElementById('alert-container');
 
+/**
+ * Obtiene solo los dispositivos (actuadores y sensores) de la API.
+ * @returns {Promise<Array>} Una promesa que se resuelve con un arreglo de dispositivos.
+ */
 async function fetchDevices() {
     const response = await fetch(`${API_URL}/dispositivos`);
-    return await response.json();
+    const allItems = await response.json();
+    return allItems.filter(item => item.tipo && item.tipo.toLowerCase() !== 'log');
 }
 
+/**
+ * Actualiza un dispositivo en la API enviando una petición PUT.
+ * @param {string} id - El ID del dispositivo a actualizar.
+ * @param {object} data - El objeto con los datos a actualizar.
+ */
 async function updateDevice(id, data) {
     await fetch(`${API_URL}/dispositivos/${id}`, {
         method: 'PUT',
@@ -16,13 +29,16 @@ async function updateDevice(id, data) {
     });
 }
 
-// NUEVA FUNCIÓN: Crea un registro de tipo "log" en el endpoint de dispositivos
+/**
+ * Crea un registro de historial (un item con tipo 'log') en la API.
+ * @param {object} logData - El objeto con la información del evento a registrar.
+ */
 async function createHistoryLog(logData) {
     const logObject = {
         nombre: logData.nombreDispositivo,
-        tipo: 'log', // Marcador especial para identificarlo como un registro
+        tipo: 'log',
         ultimevento: logData.evento,
-        valor: logData.valor, // Usaremos el campo 'valor' para el detalle
+        valor: logData.valor,
         ultimaactividad: Math.floor(Date.now() / 1000),
         estado: null
     };
@@ -33,16 +49,23 @@ async function createHistoryLog(logData) {
     });
 }
 
-
+/**
+ * Muestra una alerta de Bootstrap en la pantalla.
+ * @param {string} message - El mensaje a mostrar.
+ * @param {string} type - El tipo de alerta (ej. 'success', 'warning', 'danger').
+ */
 function showAlert(message, type = 'info') {
     const alertHtml = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
     alertContainer.innerHTML = alertHtml;
 }
 
+/**
+ * Dibuja los controles (interruptores, barras de progreso) en la página.
+ * @param {Array} devices - El arreglo de dispositivos a dibujar.
+ */
 function renderControls(devices) {
     controlContainer.innerHTML = '';
-    const actualDevices = devices.filter(d => d.tipo.toLowerCase() !== 'log');
-    actualDevices.forEach(device => {
+    devices.forEach(device => {
         let cardHtml = '';
         if (device.tipo.toLowerCase() === 'actuador') {
             cardHtml = `<div class="col-md-6 col-lg-3 mb-3"><div class="card"><div class="card-body text-center"><h5 class="card-title">${device.nombre}</h5><div class="form-check form-switch fs-3 d-inline-block"><input class="form-check-input" type="checkbox" role="switch" id="switch-${device.id}" data-device-id="${device.id}" ${device.estado ? 'checked' : ''}></div></div></div></div>`;
@@ -52,9 +75,13 @@ function renderControls(devices) {
         }
         controlContainer.innerHTML += cardHtml;
     });
-    addEventListeners(actualDevices);
+    addEventListeners(devices);
 }
 
+/**
+ * Añade los listeners de eventos a los controles recién dibujados.
+ * @param {Array} devices - El arreglo de dispositivos.
+ */
 function addEventListeners(devices) {
     const pumpSwitches = document.querySelectorAll('input[id^="switch-"]');
     pumpSwitches.forEach(pumpSwitch => {
@@ -85,15 +112,23 @@ function addEventListeners(devices) {
     }
 }
 
+/**
+ * Función auxiliar para encontrar los 4 dispositivos clave de forma segura.
+ * @param {Array} devices - El arreglo completo de dispositivos.
+ * @returns {object} Un objeto con los 4 dispositivos clave.
+ */
 function findDevices(devices) {
-    const actualDevices = devices.filter(d => d.tipo.toLowerCase() !== 'log');
-    const mainPump = actualDevices.find(d => d.tipo.toLowerCase() === 'actuador' && !d.nombre.toLowerCase().includes("respaldo"));
-    const backupPump = actualDevices.find(d => d.tipo.toLowerCase() === 'actuador' && d.nombre.toLowerCase().includes("respaldo"));
-    const mainSensor = actualDevices.find(d => d.tipo.toLowerCase() === 'sensor' && d.nombre.toLowerCase().includes("principal"));
-    const backupSensor = actualDevices.find(d => d.tipo.toLowerCase() === 'sensor' && d.nombre.toLowerCase().includes("respaldo"));
+    const mainPump = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'actuador' && d.nombre.toLowerCase().includes("bombadeagua") && !d.nombre.toLowerCase().includes("respaldo"));
+    const backupPump = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'actuador' && d.nombre.toLowerCase().includes("respaldo"));
+    const mainSensor = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'sensor' && d.nombre.toLowerCase().includes("principal"));
+    const backupSensor = devices.find(d => d.tipo && d.tipo.toLowerCase() === 'sensor' && d.nombre.toLowerCase().includes("respaldo"));
     return { mainPump, backupPump, mainSensor, backupSensor };
 }
 
+/**
+ * Revisa el estado de los dispositivos y muestra alertas si se cumplen ciertas condiciones.
+ * @param {Array} devices - El arreglo de dispositivos.
+ */
 function checkSystemAlerts(devices) {
     const { mainPump, mainSensor, backupSensor } = findDevices(devices);
     if (!mainPump || !mainSensor || !backupSensor) return;
@@ -109,6 +144,10 @@ function checkSystemAlerts(devices) {
     if (backupSensor.valor >= 95) showAlert('<strong>Información:</strong> El tinaco de respaldo está lleno.', 'success');
 }
 
+/**
+ * Ejecuta la lógica de simulación de llenado y transferencia de agua.
+ * @param {Array} devices - El arreglo de dispositivos.
+ */
 async function runSimulation(devices) {
     const { mainPump, backupPump, mainSensor, backupSensor } = findDevices(devices);
     if (!mainPump || !backupPump || !mainSensor || !backupSensor) return;
@@ -128,6 +167,9 @@ async function runSimulation(devices) {
     }
 }
 
+/**
+ * El ciclo principal de la aplicación de control.
+ */
 async function mainCycle() {
     try {
         let devices = await fetchDevices();

@@ -1,11 +1,17 @@
-const API_URL = 'https://68bb0dec84055bce63f1058f.mockapi.io/api/v1/';
+// ==================================================================
+// Lógica para la página de Monitoreo (index.html)
+// ==================================================================
 
+const API_URL = 'https://68bb0dec84055bce63f1058f.mockapi.io/api/v1/';
 const statusContainer = document.getElementById('status-container');
 const statusHistoryTable = document.getElementById('status-history-table');
-
 const CAPACIDAD_PRINCIPAL = 2000;
 const CAPACIDAD_RESPALDO = 1000;
 
+/**
+ * Obtiene todos los items (dispositivos y logs) de la API.
+ * @returns {Promise<Array>} Una promesa que se resuelve con un arreglo de todos los items.
+ */
 async function fetchAllData() {
     try {
         const response = await fetch(`${API_URL}/dispositivos`);
@@ -17,6 +23,10 @@ async function fetchAllData() {
     }
 }
 
+/**
+ * Dibuja las tarjetas de estado gráfico para los dispositivos reales.
+ * @param {Array} devices - El arreglo de objetos de dispositivo.
+ */
 function renderStatusCards(devices) {
     statusContainer.innerHTML = '';
     if (!Array.isArray(devices) || devices.length === 0) {
@@ -40,6 +50,10 @@ function renderStatusCards(devices) {
     });
 }
 
+/**
+ * Dibuja la tabla con los últimos 10 registros de historial.
+ * @param {Array} historyLogs - El arreglo de objetos de tipo 'log'.
+ */
 function renderStatusTable(historyLogs) {
     statusHistoryTable.innerHTML = '';
     if (!Array.isArray(historyLogs) || historyLogs.length === 0) {
@@ -47,7 +61,6 @@ function renderStatusTable(historyLogs) {
         return;
     }
     
-    // Ordena por fecha (más reciente primero) y toma los últimos 10
     const sortedLogs = historyLogs.sort((a, b) => b.ultimaactividad - a.ultimaactividad).slice(0, 10);
     
     sortedLogs.forEach(log => {
@@ -62,13 +75,15 @@ function renderStatusTable(historyLogs) {
     });
 }
 
+/**
+ * Función principal que orquesta la actualización del dashboard de monitoreo.
+ */
 async function updateDashboard() {
     try {
         const allItems = await fetchAllData();
         
-        // Separa los dispositivos reales de los registros de log
-        const devices = allItems.filter(item => item.tipo.toLowerCase() !== 'log');
-        const historyLogs = allItems.filter(item => item.tipo.toLowerCase() === 'log');
+        const devices = allItems.filter(item => item.tipo && item.tipo.toLowerCase() !== 'log');
+        const historyLogs = allItems.filter(item => item.tipo && item.tipo.toLowerCase() === 'log');
         
         renderStatusCards(devices);
         renderStatusTable(historyLogs);
